@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { useProfile } from '../lib/ProfileContext';
 import { Wifi, BatteryMedium, Signal, Smartphone, Maximize2, Minimize2 } from 'lucide-react';
 
 interface AndroidFrameProps {
@@ -6,6 +7,7 @@ interface AndroidFrameProps {
 }
 
 export const AndroidFrame: React.FC<AndroidFrameProps> = ({ children }) => {
+  const { name } = useProfile();
   const [currentTime, setCurrentTime] = useState<string>('09:41');
   const [isExpanded, setIsExpanded] = useState<boolean>(false);
 
@@ -27,7 +29,7 @@ export const AndroidFrame: React.FC<AndroidFrameProps> = ({ children }) => {
       <aside aria-label="Device Controls" className="hidden md:flex items-center justify-between w-full max-w-md mb-2 px-2 text-xs text-slate-400">
         <div className="flex items-center gap-2">
           <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
-          <span className="font-medium text-slate-300">Suraj Yadav</span>
+          <span className="font-medium text-slate-300">{name}</span>
         </div>
         <button
           onClick={() => setIsExpanded(!isExpanded)}

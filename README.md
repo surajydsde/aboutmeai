@@ -6,7 +6,7 @@
 [![Tailwind CSS](https://img.shields.io/badge/Tailwind_CSS-v4-06B6D4?logo=tailwindcss&logoColor=white)](https://tailwindcss.com/)
 [![Express](https://img.shields.io/badge/Express-v4-000000?logo=express&logoColor=white)](https://expressjs.com/)
 [![Google Gemini](https://img.shields.io/badge/Google_Gemini-3.8_Flash-4285F4?logo=google&logoColor=white)](https://ai.google.dev/)
-[![Tests](https://img.shields.io/badge/Tests-11_Passing-brightgreen?logo=vitest&logoColor=white)](https://vitest.dev/)
+[![Tests](https://img.shields.io/badge/Tests-31_Passing-brightgreen?logo=vitest&logoColor=white)](https://vitest.dev/)
 [![License](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 
 An interactive, production-grade Android Material Design 3 portfolio application and AI Knowledge Agent representing **Suraj Yadav** — Full-Stack Developer with 7+ years of experience across React.js, Next.js, Node.js, Express, AWS, and TUM-certified Generative AI.
@@ -26,7 +26,7 @@ This application provides a conversational and visual portfolio experience:
    - **30% Conversion Lift**: Replaced legacy forms with custom React state handlers for PayPal campaign pages.
    - **10,671 Impressions**: Personal RAG AI agent project built with Gemini LLM and LangGraph.
 5. **Native Sharing & Deep Linking**: One-click sharing via Web Share API (`navigator.share`) and clipboard fallback, with URL query parameter support (`?tab=profile`) for easy sharing with recruiters and peers.
-6. **Owner / Admin Protected Context**: An owner verification dialog (passcode protected) that allows Suraj to customize the AI agent's grounding prompt and test system instructions.
+6. **Live, editable profile (owner mode)**: After a server-verified passcode, the owner edits the Resume tab in place. Saving publishes to every visitor and updates the AI's knowledge at the same time — the resume and the AI always share one source of data.
 
 ---
 
@@ -45,7 +45,7 @@ This application provides a conversational and visual portfolio experience:
 ┌──────────────────────────────▼──────────────────────────────┐
 │                  Server (Express + Node 22)                │
 │  - REST Endpoints: /api/chat, /api/profile, /api/health    │
-│  - Model Cascade: gemini-3.8-flash -> gemini-3.1-flash-lite│
+│  - Model Cascade: 3.8-flash -> 3.6-flash -> 3.5-flash-lite │
 │  - Secure Server-Side Gemini API Key Management            │
 │  - Production Static Asset Serving from dist/              │
 └──────────────────────────────┬──────────────────────────────┘
@@ -67,7 +67,8 @@ This application provides a conversational and visual portfolio experience:
 ### Backend
 - **Server**: Express 4 with TypeScript (`tsx` in dev mode)
 - **AI SDK**: `@google/genai` (Node.js SDK)
-- **AI Model**: `gemini-3.8-flash` with multi-tier fallback to `gemini-3.1-flash-lite` and `gemini-flash-latest`
+- **AI Model**: `gemini-3.8-flash`, falling back to `gemini-3.6-flash` and `gemini-3.5-flash-lite` (no fallback on quota or auth errors, since they share one key)
+- **Profile storage**: one private JSON file in Vercel Blob (`@vercel/blob`)
 
 ### Testing
 - **Test Runner**: Vitest 5
@@ -85,15 +86,20 @@ This application provides a conversational and visual portfolio experience:
 │   └── pull_request_template.md   # Standard PR checklist
 ├── src/
 │   ├── components/
-│   │   ├── AdminAuthModal.tsx     # Owner PIN passcode dialog
+│   │   ├── AdminAuthModal.tsx     # Owner passcode dialog (verified by the server)
+│   │   ├── ProfileEditor.tsx      # Owner editor for the live profile
 │   │   ├── AndroidFrame.tsx       # Pixel device frame with status/gesture bars
 │   │   ├── ChatView.tsx           # Multi-turn conversational interface
-│   │   ├── ContextView.tsx        # Owner prompt & knowledge editor
+│   │   ├── ContextView.tsx        # Owner view of the AI's generated knowledge
 │   │   ├── MaterialBottomNav.tsx  # Dynamic M3 bottom navigation bar
 │   │   ├── MaterialTopBar.tsx     # M3 app bar with share, reset, & owner lock
 │   │   └── ProfileView.tsx        # Career timeline, metrics, & skills
 │   ├── data/
-│   │   └── surajProfile.ts        # Authentic resume data & suggestion chips
+│   │   └── surajProfile.ts        # Starting profile (used until the first save)
+│   ├── lib/
+│   │   ├── profile.ts             # Shared: profile validation + AI context builder
+│   │   ├── api.ts                 # Browser API client
+│   │   └── ProfileContext.ts      # React context for the live profile
 │   ├── test/
 │   │   ├── api.test.ts            # API formatting and share URL tests
 │   │   ├── components.test.tsx    # Component render & interaction tests
@@ -104,7 +110,9 @@ This application provides a conversational and visual portfolio experience:
 │   ├── main.tsx                   # React entry point
 │   └── index.css                  # Global Tailwind CSS imports
 ├── public/                        # Static assets
-├── server.ts                      # Express server & Gemini API proxy
+├── api/index.ts                   # Express API (Vercel serverless function)
+├── server/                        # Profile store, owner auth, rate limiting
+├── server.ts                      # Local/Cloud Run server wrapper
 ├── vite.config.ts                 # Vite & Vitest configuration
 ├── package.json                   # Project dependencies and npm scripts
 ├── metadata.json                  # Application metadata & capabilities
@@ -125,8 +133,8 @@ This application provides a conversational and visual portfolio experience:
 
 ### 1. Clone & Install
 ```bash
-git clone https://github.com/your-username/suraj-yadav-ai-portfolio.git
-cd suraj-yadav-ai-portfolio
+git clone https://github.com/surajydsde/aboutmeai.git
+cd aboutmeai
 npm install
 ```
 
@@ -138,7 +146,7 @@ cp .env.example .env
 Add your Gemini API key:
 ```env
 GEMINI_API_KEY="AIzaSy..."
-PORT=3000
+OWNER_PASSCODE="choose-a-long-unique-passcode"
 ```
 
 ### 3. Run in Development
@@ -184,16 +192,20 @@ npm run lint
 2. Framework Preset: **Vite**
 3. Build Command: `npm run build`
 4. Output Directory: `dist`
-5. Configure `GEMINI_API_KEY` in Vercel Environment Variables.
+5. Add Environment Variables: `GEMINI_API_KEY` and `OWNER_PASSCODE`.
+6. Storage → **Create / Connect a Blob store** to the project (this adds `BLOB_READ_WRITE_TOKEN`).
+7. Redeploy. `GET /api/health` should show `ownerLoginConfigured: true` and `persistentStorage: true`.
 
 ---
 
-## 🔐 Owner Mode Access
-The **AI Context** tab is locked by default so public visitors focus strictly on the AI chat and resume.
-To unlock Owner Mode:
-1. Tap the discreet lock icon in the top right or bottom of the Resume tab.
-2. Enter the private owner passcode.
-3. Modify grounding instructions or review the system prompt dynamically.
+## 🔐 Owner Mode: Editing the Live Profile
+1. Tap the lock icon (top bar) or **Owner Settings** at the bottom of the Resume tab.
+2. Enter the passcode. It is checked on the server against `OWNER_PASSCODE`, which returns a signed session token (12 hours).
+3. Tap **Edit profile**, change anything — basics, skills, experience, projects, awards, education, and private **Notes for the AI** — then **Save & publish**.
+4. The change is stored in Vercel Blob. Every visitor's Resume tab and every AI answer use it right away.
+
+The **AI Context** tab (owner only) shows exactly what the AI is told, generated from the profile.
+`src/data/surajProfile.ts` is only the starting profile, used until the first save.
 
 ---
 

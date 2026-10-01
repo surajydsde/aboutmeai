@@ -1,10 +1,11 @@
 import React, { useState } from 'react';
-import { Lock, Key, X, ShieldAlert, CheckCircle2 } from 'lucide-react';
+import { Lock, Key, X, ShieldAlert, Loader2 } from 'lucide-react';
+import { loginRequest } from '../lib/api';
 
 interface AdminAuthModalProps {
   isOpen: boolean;
   onClose: () => void;
-  onSuccess: () => void;
+  onSuccess: (token: string) => void;
 }
 
 export const AdminAuthModal: React.FC<AdminAuthModalProps> = ({
@@ -14,17 +15,23 @@ export const AdminAuthModal: React.FC<AdminAuthModalProps> = ({
 }) => {
   const [pin, setPin] = useState('');
   const [error, setError] = useState<string | null>(null);
+  const [submitting, setSubmitting] = useState(false);
 
   if (!isOpen) return null;
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (pin.trim() === '#owner12345@$') {
-      setError(null);
+    if (!pin.trim() || submitting) return;
+    setSubmitting(true);
+    setError(null);
+    try {
+      const { token } = await loginRequest(pin);
       setPin('');
-      onSuccess();
-    } else {
-      setError('Incorrect passcode. AI Context configuration is restricted to Suraj Yadav.');
+      onSuccess(token);
+    } catch (err: any) {
+      setError(err?.message || 'Could not verify the passcode. Please try again.');
+    } finally {
+      setSubmitting(false);
     }
   };
 
@@ -55,7 +62,7 @@ export const AdminAuthModal: React.FC<AdminAuthModalProps> = ({
           </div>
           <h3 className="text-base font-bold text-white tracking-tight">Owner Verification</h3>
           <p className="text-xs text-slate-400 leading-relaxed px-2">
-            The <span className="text-indigo-300 font-medium">AI Context</span> tab is restricted to Suraj Yadav to prevent unintended prompt or resume modifications.
+            Unlock to edit the resume and the AI's knowledge. Changes go live for every visitor.
           </p>
         </div>
 
@@ -102,9 +109,11 @@ export const AdminAuthModal: React.FC<AdminAuthModalProps> = ({
             </button>
             <button
               type="submit"
-              className="flex-1 py-2.5 px-4 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-xs font-semibold text-white shadow-lg shadow-indigo-600/30 transition-all cursor-pointer"
+              disabled={submitting}
+              className="flex-1 py-2.5 px-4 rounded-xl bg-indigo-600 hover:bg-indigo-500 disabled:opacity-60 text-xs font-semibold text-white shadow-lg shadow-indigo-600/30 transition-all cursor-pointer flex items-center justify-center gap-1.5"
             >
-              Unlock Context
+              {submitting && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
+              {submitting ? 'Checking…' : 'Unlock'}
             </button>
           </div>
         </form>

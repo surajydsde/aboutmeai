@@ -50,4 +50,8 @@ export interface UserProfileData {
   awards: string[];
   certifications: string[];
   education: string;
+  /** Short label shown in the top bar and timeline, e.g. "7+" */
+  experienceYears?: string;
+  /** Extra private notes for the AI only (availability, notice period, etc.) */
+  aiNotes?: string;
 }

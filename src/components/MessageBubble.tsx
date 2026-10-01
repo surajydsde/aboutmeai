@@ -3,12 +3,14 @@ import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { Copy, Check, Volume2, VolumeX, Sparkles, User } from 'lucide-react';
 import { ChatMessage } from '../types';
+import { useProfile } from '../lib/ProfileContext';
 
 interface MessageBubbleProps {
   message: ChatMessage;
 }
 
 export const MessageBubble: React.FC<MessageBubbleProps> = ({ message }) => {
+  const { name } = useProfile();
   const [copied, setCopied] = useState(false);
   const [speaking, setSpeaking] = useState(false);
 
@@ -65,7 +67,7 @@ export const MessageBubble: React.FC<MessageBubbleProps> = ({ message }) => {
           ) : (
             <img
               src="/avatar.png"
-              alt="Suraj AI"
+              alt={`${name} AI`}
               className="w-full h-full rounded-full object-cover"
             />
           )}
