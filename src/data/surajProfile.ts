@@ -1,7 +1,8 @@
-import { UserProfileData, SuggestionChip } from '../types';
+import type { UserProfileData, SuggestionChip } from '../types';
 
 export const SURAJ_PROFILE: UserProfileData = {
   name: 'Suraj Yadav',
+  experienceYears: '7+',
   title: 'Full-Stack Developer (React.js, Next.js, Node.js, AWS)',
   location: 'Mumbai, India',
   email: 'surajyadav.sde@gmail.com',
@@ -115,6 +116,7 @@ export const SURAJ_PROFILE: UserProfileData = {
   ],
   education:
     'BSc Information Technology — Nirmala Memorial Foundation College of Commerce & Science, University of Mumbai (2014–2017)',
+  aiNotes: '',
 };
 
 export const DEFAULT_SUGGESTION_CHIPS: SuggestionChip[] = [

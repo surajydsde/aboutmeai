@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { AndroidFrame } from './components/AndroidFrame';
 import { MaterialTopBar } from './components/MaterialTopBar';
 import { MaterialBottomNav } from './components/MaterialBottomNav';
@@ -6,15 +6,20 @@ import { ChatView } from './components/ChatView';
 import { ProfileView } from './components/ProfileView';
 import { ContextView } from './components/ContextView';
 import { AdminAuthModal } from './components/AdminAuthModal';
-import { ChatMessage, SuggestionChip } from './types';
-import { DEFAULT_SUGGESTION_CHIPS } from './data/surajProfile';
+import { ChatMessage, SuggestionChip, UserProfileData } from './types';
+import { DEFAULT_SUGGESTION_CHIPS, SURAJ_PROFILE } from './data/surajProfile';
+import { ProfileContext } from './lib/ProfileContext';
+import { buildProfileContext } from './lib/profile';
+import { ApiError, chatRequest, fetchProfile, ownerToken, saveProfileRequest, verifyTokenRequest } from './lib/api';
+
+type Tab = 'chat' | 'profile' | 'context';
 
 const STORAGE_KEY_MESSAGES = 'suraj_chat_history_v1';
-const STORAGE_KEY_CONTEXT = 'suraj_custom_context_v1';
-const STORAGE_KEY_ADMIN = 'suraj_admin_auth_v1';
+// Keys from the old client-side owner mode; removed on load.
+const LEGACY_KEYS = ['suraj_custom_context_v1', 'suraj_admin_auth_v1'];
 
 export default function App() {
-  const [currentTab, setCurrentTab] = useState<'chat' | 'profile' | 'context'>(() => {
+  const [currentTab, setCurrentTab] = useState<Tab>(() => {
     try {
       const searchTab = new URLSearchParams(window.location.search).get('tab');
       if (searchTab === 'profile') return 'profile';
@@ -23,14 +28,15 @@ export default function App() {
     }
     return 'chat';
   });
-  const [isAdmin, setIsAdmin] = useState<boolean>(() => {
-    try {
-      return sessionStorage.getItem(STORAGE_KEY_ADMIN) === 'true';
-    } catch {
-      return false;
-    }
-  });
-  const [showAdminModal, setShowAdminModal] = useState<boolean>(false);
+
+  const [token, setToken] = useState<string | null>(() => ownerToken.get());
+  const isAdmin = Boolean(token);
+  const [showAdminModal, setShowAdminModal] = useState(false);
+  const [pendingTab, setPendingTab] = useState<Tab>('profile');
+  const [isEditing, setIsEditing] = useState(false);
+
+  const [profile, setProfile] = useState<UserProfileData>(SURAJ_PROFILE);
+  const [aiContext, setAiContext] = useState<string>(() => buildProfileContext(SURAJ_PROFILE));
 
   const [messages, setMessages] = useState<ChatMessage[]>(() => {
     try {
@@ -42,31 +48,36 @@ export default function App() {
     return [];
   });
 
-  const [customContext, setCustomContext] = useState<string>(() => {
+  const [chips, setChips] = useState<SuggestionChip[]>(DEFAULT_SUGGESTION_CHIPS);
+  const [isLoading, setIsLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const lockAdmin = useCallback(() => {
+    ownerToken.clear();
+    setToken(null);
+    setIsEditing(false);
+    setCurrentTab((tab) => (tab === 'context' ? 'chat' : tab));
+  }, []);
+
+  // Load the live profile + suggestions, and check any saved owner session.
+  useEffect(() => {
     try {
-      const saved = localStorage.getItem(STORAGE_KEY_CONTEXT);
-      if (saved) return saved;
+      LEGACY_KEYS.forEach((k) => {
+        localStorage.removeItem(k);
+        sessionStorage.removeItem(k);
+      });
     } catch {
       // ignore
     }
-    return '';
-  });
 
-  const [defaultContext, setDefaultContext] = useState<string>('');
-  const [chips, setChips] = useState<SuggestionChip[]>(DEFAULT_SUGGESTION_CHIPS);
-  const [isLoading, setIsLoading] = useState<boolean>(false);
-  const [error, setError] = useState<string | null>(null);
-
-  // Fetch initial profile context & suggestions from backend
-  useEffect(() => {
-    fetch('/api/profile')
-      .then((res) => res.json())
+    fetchProfile()
       .then((data) => {
-        if (data && data.profile) {
-          setDefaultContext(data.profile);
+        if (data?.profile) {
+          setProfile(data.profile);
+          setAiContext(data.context);
         }
       })
-      .catch((err) => console.error('Failed to load profile context:', err));
+      .catch((err) => console.error('Failed to load profile:', err));
 
     fetch('/api/suggestions')
       .then((res) => res.json())
@@ -76,9 +87,19 @@ export default function App() {
         }
       })
       .catch((err) => console.error('Failed to load suggestions:', err));
-  }, []);
 
-  // Sync messages to local storage
+    const saved = ownerToken.get();
+    if (saved) {
+      verifyTokenRequest(saved).then((valid) => {
+        if (!valid) lockAdmin();
+      });
+    }
+  }, [lockAdmin]);
+
+  useEffect(() => {
+    document.title = profile.title ? `${profile.name} — ${profile.title}` : profile.name;
+  }, [profile.name, profile.title]);
+
   useEffect(() => {
     try {
       localStorage.setItem(STORAGE_KEY_MESSAGES, JSON.stringify(messages));
@@ -87,117 +108,93 @@ export default function App() {
     }
   }, [messages]);
 
-  // Sync custom context to local storage
-  useEffect(() => {
-    try {
-      if (customContext) {
-        localStorage.setItem(STORAGE_KEY_CONTEXT, customContext);
-      } else {
-        localStorage.removeItem(STORAGE_KEY_CONTEXT);
-      }
-    } catch {
-      // ignore
+  const handleSaveProfile = async (next: UserProfileData) => {
+    if (!token) {
+      setShowAdminModal(true);
+      throw new Error('Please unlock owner mode first.');
     }
-  }, [customContext]);
+    try {
+      const data = await saveProfileRequest(next, token);
+      setProfile(data.profile);
+      setAiContext(data.context);
+    } catch (err) {
+      if (err instanceof ApiError && err.status === 401) {
+        ownerToken.clear();
+        setToken(null);
+        setPendingTab('profile');
+        setShowAdminModal(true);
+        throw new Error('Your owner session expired. Unlock again, then press Save — your edits are still here.');
+      }
+      throw err;
+    }
+  };
 
   const handleSendMessage = async (text: string) => {
     if (!text.trim() || isLoading) return;
-
     setError(null);
-    const now = new Date();
-    const timeString = now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
 
     const userMessage: ChatMessage = {
       id: `user-${Date.now()}`,
       role: 'user',
       text: text.trim(),
-      timestamp: timeString,
+      timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
     };
 
-    // Update conversation state with user's question
-    const updatedMessages = [...messages, userMessage];
-    setMessages(updatedMessages);
+    setMessages((prev) => [...prev, userMessage]);
     setIsLoading(true);
 
     try {
-      // Send previous turns for conversational memory & context
-      const historyPayload = messages.slice(-10).map((msg) => ({
+      const history = messages.slice(-10).map((msg) => ({
         role: msg.role === 'assistant' ? 'model' : 'user',
         text: msg.text,
       }));
-
-      const response = await fetch('/api/chat', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          message: text.trim(),
-          history: historyPayload,
-          customProfile: customContext || undefined,
-        }),
-      });
-
-      const data = await response.json();
-
-      if (!response.ok) {
-        throw new Error(data.error || 'Unable to receive response from Gemini');
-      }
-
-      const botMessage: ChatMessage = {
-        id: `assistant-${Date.now()}`,
-        role: 'assistant',
-        text: data.reply || 'No response generated.',
-        timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-      };
-
-      setMessages((prev) => [...prev, botMessage]);
+      const data = await chatRequest(text.trim(), history);
+      setMessages((prev) => [
+        ...prev,
+        {
+          id: `assistant-${Date.now()}`,
+          role: 'assistant',
+          text: data.reply || 'No response generated.',
+          timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+        },
+      ]);
     } catch (err: any) {
       console.error('Chat error:', err);
-      setError(err?.message || 'Failed to connect to Gemini. Please try again.');
+      setError(err?.message || 'Failed to reach the AI. Please try again.');
     } finally {
       setIsLoading(false);
     }
   };
 
-  const handleTabChange = (tab: 'chat' | 'profile' | 'context') => {
+  const handleTabChange = (tab: Tab) => {
     if (tab === 'context' && !isAdmin) {
+      setPendingTab('context');
       setShowAdminModal(true);
       return;
     }
+    if (tab !== 'profile') setIsEditing(false);
     setCurrentTab(tab);
     try {
       const url = new URL(window.location.href);
-      if (tab === 'chat') {
-        url.searchParams.delete('tab');
-      } else {
-        url.searchParams.set('tab', tab);
-      }
+      if (tab === 'chat') url.searchParams.delete('tab');
+      else url.searchParams.set('tab', tab);
       window.history.replaceState({}, '', url.toString());
     } catch {
       // ignore
     }
   };
 
-  const handleAdminSuccess = () => {
-    setIsAdmin(true);
-    try {
-      sessionStorage.setItem(STORAGE_KEY_ADMIN, 'true');
-    } catch {
-      // ignore
-    }
-    setShowAdminModal(false);
-    setCurrentTab('context');
+  const requestAdmin = (target: Tab = 'profile') => {
+    setPendingTab(target);
+    setShowAdminModal(true);
   };
 
-  const handleLockAdmin = () => {
-    setIsAdmin(false);
-    try {
-      sessionStorage.removeItem(STORAGE_KEY_ADMIN);
-    } catch {
-      // ignore
-    }
-    if (currentTab === 'context') {
-      setCurrentTab('chat');
-    }
+  const handleAdminSuccess = (newToken: string) => {
+    ownerToken.set(newToken);
+    setToken(newToken);
+    setShowAdminModal(false);
+    setCurrentTab(pendingTab);
+    if (pendingTab === 'profile') setIsEditing(true);
   };
 
   const handleClearChat = () => {
@@ -212,67 +209,65 @@ export default function App() {
   };
 
   return (
-    <AndroidFrame>
-      {/* Material 3 Top App Bar */}
-      <MaterialTopBar
-        currentTab={currentTab}
-        onTabChange={handleTabChange}
-        onClearChat={handleClearChat}
-        messageCount={messages.length}
-        isAdmin={isAdmin}
-        onRequestAdmin={() => setShowAdminModal(true)}
-        onLockAdmin={handleLockAdmin}
-      />
+    <ProfileContext.Provider value={profile}>
+      <AndroidFrame>
+        <MaterialTopBar
+          currentTab={currentTab}
+          onTabChange={handleTabChange}
+          onClearChat={handleClearChat}
+          messageCount={messages.length}
+          isAdmin={isAdmin}
+          onRequestAdmin={() => requestAdmin('profile')}
+          onLockAdmin={lockAdmin}
+          name={profile.name}
+          experienceYears={profile.experienceYears}
+        />
 
-      {/* Screen Views */}
-      <main className="flex-1 flex flex-col overflow-hidden relative">
-        {currentTab === 'chat' && (
-          <ChatView
-            messages={messages}
-            isLoading={isLoading}
-            error={error}
-            onSendMessage={handleSendMessage}
-            chips={chips}
-            onSelectChip={handleSendMessage}
-            onClearError={() => setError(null)}
-          />
+        <main className="flex-1 flex flex-col overflow-hidden relative">
+          {currentTab === 'chat' && (
+            <ChatView
+              messages={messages}
+              isLoading={isLoading}
+              error={error}
+              onSendMessage={handleSendMessage}
+              chips={chips}
+              onSelectChip={handleSendMessage}
+              onClearError={() => setError(null)}
+            />
+          )}
+
+          {currentTab === 'profile' && (
+            <ProfileView
+              profile={profile}
+              onSaveProfile={handleSaveProfile}
+              isEditing={isEditing}
+              onEditingChange={setIsEditing}
+              onAskAbout={handleAskAbout}
+              onBackToChat={() => setCurrentTab('chat')}
+              isAdmin={isAdmin}
+              onRequestAdmin={() => requestAdmin('profile')}
+            />
+          )}
+
+          {currentTab === 'context' && isAdmin && (
+            <ContextView
+              context={aiContext}
+              onEditProfile={() => {
+                setCurrentTab('profile');
+                setIsEditing(true);
+              }}
+              onBackToChat={() => setCurrentTab('chat')}
+              onLockAdmin={lockAdmin}
+            />
+          )}
+        </main>
+
+        {!isEditing && (
+          <MaterialBottomNav currentTab={currentTab} onTabChange={handleTabChange} messageCount={messages.length} isAdmin={isAdmin} />
         )}
 
-        {currentTab === 'profile' && (
-          <ProfileView
-            onAskAbout={handleAskAbout}
-            onBackToChat={() => setCurrentTab('chat')}
-            isAdmin={isAdmin}
-            onRequestAdmin={() => setShowAdminModal(true)}
-          />
-        )}
-
-        {currentTab === 'context' && isAdmin && (
-          <ContextView
-            customContext={customContext}
-            defaultContext={defaultContext}
-            onSaveContext={setCustomContext}
-            onResetContext={() => setCustomContext('')}
-            onBackToChat={() => setCurrentTab('chat')}
-            onLockAdmin={handleLockAdmin}
-          />
-        )}
-      </main>
-
-      {/* Material 3 Bottom Navigation Bar */}
-      <MaterialBottomNav
-        currentTab={currentTab}
-        onTabChange={handleTabChange}
-        messageCount={messages.length}
-        isAdmin={isAdmin}
-      />
-
-      {/* Admin Passcode Verification Dialog */}
-      <AdminAuthModal
-        isOpen={showAdminModal}
-        onClose={() => setShowAdminModal(false)}
-        onSuccess={handleAdminSuccess}
-      />
-    </AndroidFrame>
+        <AdminAuthModal isOpen={showAdminModal} onClose={() => setShowAdminModal(false)} onSuccess={handleAdminSuccess} />
+      </AndroidFrame>
+    </ProfileContext.Provider>
   );
 }

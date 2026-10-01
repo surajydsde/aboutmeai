@@ -1,4 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
+import { useProfile } from '../lib/ProfileContext';
 import { Send, Mic, MicOff, X, Sparkles } from 'lucide-react';
 
 interface MaterialInputBarProps {
@@ -12,6 +13,7 @@ export const MaterialInputBar: React.FC<MaterialInputBarProps> = ({
   isLoading,
   disabled = false,
 }) => {
+  const { name } = useProfile();
   const [inputText, setInputText] = useState('');
   const [isListening, setIsListening] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
@@ -117,7 +119,7 @@ export const MaterialInputBar: React.FC<MaterialInputBarProps> = ({
             placeholder={
               isLoading
                 ? 'Gemini is generating response...'
-                : 'Ask anything about Suraj Yadav...'
+                : `Ask anything about ${name}...`
             }
             className="flex-1 bg-transparent text-slate-100 text-sm placeholder:text-slate-400 focus:outline-none resize-none max-h-[120px] py-1"
           />

@@ -9,6 +9,8 @@ interface MaterialTopBarProps {
   isAdmin?: boolean;
   onRequestAdmin: () => void;
   onLockAdmin: () => void;
+  name: string;
+  experienceYears?: string;
 }
 
 export const MaterialTopBar: React.FC<MaterialTopBarProps> = ({
@@ -19,14 +21,16 @@ export const MaterialTopBar: React.FC<MaterialTopBarProps> = ({
   isAdmin = false,
   onRequestAdmin,
   onLockAdmin,
+  name,
+  experienceYears,
 }) => {
   const [showClearConfirm, setShowClearConfirm] = useState(false);
   const [copiedLink, setCopiedLink] = useState(false);
 
   const handleShare = async () => {
     const shareData = {
-      title: 'Suraj Yadav | Full-Stack Developer & AI Portfolio',
-      text: "Ask questions to Suraj Yadav's AI Agent and explore his 7+ years full-stack experience (React, Node, AWS, GenAI)!",
+      title: `${name} | AI Portfolio`,
+      text: `Ask ${name}'s AI assistant about their experience and projects.`,
       url: window.location.href,
     };
 
@@ -58,11 +62,11 @@ export const MaterialTopBar: React.FC<MaterialTopBarProps> = ({
             onClick={() => onTabChange(currentTab === 'profile' ? 'chat' : 'profile')}
             id="btn-avatar-profile"
             className="w-10 h-10 rounded-full bg-gradient-to-tr from-indigo-600 via-indigo-500 to-sky-400 p-0.5 shadow-md hover:scale-105 active:scale-95 transition-transform flex items-center justify-center cursor-pointer overflow-hidden"
-            title="View Suraj's Profile"
+            title={`View ${name}'s profile`}
           >
             <img
               src="/avatar.png"
-              alt="Suraj Yadav"
+              alt={name}
               className="w-full h-full rounded-full object-cover"
             />
           </button>
@@ -72,7 +76,7 @@ export const MaterialTopBar: React.FC<MaterialTopBarProps> = ({
 
         <div className="flex flex-col">
           <div className="flex items-center gap-1.5">
-            <h1 className="text-sm font-semibold text-[#e3e2e6] tracking-tight">Suraj Yadav</h1>
+            <h1 className="text-sm font-semibold text-[#e3e2e6] tracking-tight">{name}</h1>
             <span className="flex items-center gap-0.5 px-1.5 py-0.2 text-[10px] font-medium rounded-full bg-indigo-500/20 text-indigo-300 border border-indigo-500/30">
               <Sparkles className="w-2.5 h-2.5 text-indigo-300" />
               AI
@@ -80,7 +84,7 @@ export const MaterialTopBar: React.FC<MaterialTopBarProps> = ({
           </div>
           <span className="text-[11px] text-slate-400 font-normal flex items-center gap-1">
             <span className="inline-block w-1.5 h-1.5 rounded-full bg-emerald-400"></span>
-            Gemini 3.8 Flash • 7+ Yrs Exp
+            {experienceYears ? `Gemini AI • ${experienceYears} Yrs Exp` : 'Gemini AI'}
           </span>
         </div>
       </div>
@@ -96,7 +100,7 @@ export const MaterialTopBar: React.FC<MaterialTopBarProps> = ({
               ? 'bg-indigo-600/30 text-indigo-300'
               : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800/60'
           }`}
-          title="Suraj's Resume & Experience"
+          title="Resume & experience"
         >
           <User className="w-4 h-4" />
         </button>
@@ -130,7 +134,7 @@ export const MaterialTopBar: React.FC<MaterialTopBarProps> = ({
             onClick={onRequestAdmin}
             id="btn-topbar-admin-lock"
             className="p-2 rounded-full text-slate-500 hover:text-slate-300 hover:bg-slate-800/60 transition-colors cursor-pointer"
-            title="Owner Sign In (Suraj Yadav)"
+            title="Owner sign in"
           >
             <Lock className="w-3.5 h-3.5" />
           </button>

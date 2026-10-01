@@ -1,5 +1,6 @@
 import React, { useRef, useEffect } from 'react';
 import { ChatMessage, SuggestionChip } from '../types';
+import { useProfile } from '../lib/ProfileContext';
 import { MessageBubble } from './MessageBubble';
 import { SuggestionChips } from './SuggestionChips';
 import { MaterialInputBar } from './MaterialInputBar';
@@ -24,6 +25,7 @@ export const ChatView: React.FC<ChatViewProps> = ({
   onSelectChip,
   onClearError,
 }) => {
+  const profile = useProfile();
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
 
@@ -49,10 +51,10 @@ export const ChatView: React.FC<ChatViewProps> = ({
             </div>
 
             <h2 className="text-base font-bold text-white tracking-tight mb-1">
-              Suraj Yadav AI Agent
+              {profile.name} AI Agent
             </h2>
             <p className="text-xs text-slate-300 leading-relaxed mb-4">
-              Ask any question about my 7+ years of experience across React, Next.js, Node.js, AWS, and Generative AI. I have full context of my background!
+              Ask anything about {profile.name.split(' ')[0]}'s{profile.experienceYears ? ` ${profile.experienceYears} years of` : ''} experience, skills and projects.
             </p>
 
             {/* Quick Starter Suggestions */}
