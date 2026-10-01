@@ -1,6 +1,6 @@
 import express from 'express';
 import { GoogleGenAI } from '@google/genai';
-import { getProfile, saveProfile, hasPersistentStorage } from '../server/profileStore.js';
+import { getProfile, saveProfile, hasPersistentStorage, storageStatus } from '../server/profileStore.js';
 import { checkPasscode, issueToken, verifyToken, tokenFromHeader, isOwnerLoginConfigured } from '../server/auth.js';
 import { rateLimit, clientIp } from '../server/rateLimit.js';
 import { buildProfileContext, ProfileValidationError } from '../src/lib/profile.js';
@@ -99,14 +99,22 @@ app.put('/api/profile', async (req, res) => {
   if (!requireOwner(req, res)) return;
   try {
     const profile = await saveProfile(req.body?.profile);
+    // Read it back so the owner knows visitors will actually see it.
+    const status = await storageStatus();
+    if (status.configured && (!status.saved || status.error)) {
+      return res.status(500).json({
+        error: `The save went through but reading it back failed, so visitors may still see the old version. Details: ${status.error || 'saved file not found'}`,
+      });
+    }
     res.json({ profile, context: buildProfileContext(profile) });
   } catch (err: any) {
     if (err instanceof ProfileValidationError) return res.status(400).json({ error: err.message });
     if (err?.message === 'STORAGE_NOT_CONFIGURED') {
       return res.status(503).json({ error: 'Storage is not set up. Connect a Vercel Blob store to this project, then redeploy.' });
     }
-    console.error('Profile save failed:', err?.message || err);
-    res.status(500).json({ error: 'Could not save the profile. Please try again.' });
+    const detail = String(err?.message || err).replace(/^STORAGE_WRITE_FAILED:\s*/, '');
+    console.error('Profile save failed:', detail);
+    res.status(500).json({ error: `Could not save the profile. Storage said: ${detail}` });
   }
 });
 
@@ -123,6 +131,11 @@ app.post('/api/admin/login', (req, res) => {
     return res.status(401).json({ error: 'Incorrect passcode.' });
   }
   res.json(issueToken());
+});
+
+app.get('/api/admin/storage', async (req, res) => {
+  if (!requireOwner(req, res)) return;
+  res.json(await storageStatus());
 });
 
 app.get('/api/admin/verify', (req, res) => {
